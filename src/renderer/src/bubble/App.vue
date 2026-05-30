@@ -1,18 +1,43 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 interface CommandItem {
   id: string
   pluginId: string
   name: string
   icon: string
+  submenu?: CommandItem[]
 }
 
 const expanded = ref(false)
 const dragHover = ref(false)
 const source = ref<'drag' | 'clipboard' | 'context'>('drag')
-
 const commands = ref<CommandItem[]>([])
+const activeSubmenuId = ref<string | null>(null)
+const submenuOnLeft = ref(false)
+
+const activeSubmenu = computed(() => {
+  if (!activeSubmenuId.value) return null
+  return findCommand(commands.value, activeSubmenuId.value)
+})
+
+function findCommand(list: CommandItem[], id: string): CommandItem | null {
+  for (const item of list) {
+    if (item.id === id) return item
+    if (item.submenu) {
+      const found = findCommand(item.submenu, id)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function findParent(list: CommandItem[], id: string): CommandItem | null {
+  for (const item of list) {
+    if (item.submenu?.some(c => c.id === id)) return item
+  }
+  return null
+}
 
 let isDragging = false
 let dragStartX = 0
@@ -20,6 +45,7 @@ let dragStartY = 0
 
 let unsubExpand: (() => void) | undefined
 let unsubCollapse: (() => void) | undefined
+let unsubSubmenuState: (() => void) | undefined
 
 function ts(): string {
   return new Date().toISOString().slice(11, 23)
@@ -32,25 +58,50 @@ function getMenuStyle(): Record<string, string> {
   return { height: `${height}px` }
 }
 
-function targetLabel(el: EventTarget | null): string {
-  if (!el) return 'null'
-  const e = el as HTMLElement
-  const tag = e.tagName?.toLowerCase() || '?'
-  const cls = e.className?.toString?.() || ''
-  const id = e.id || ''
-  return id ? `${tag}#${id}` : cls ? `${tag}.${cls}` : tag
-}
-
 function clearItemHighlights(): void {
   const items = document.querySelectorAll('.menu-item')
   items.forEach(i => i.classList.remove('drag-over'))
 }
 
-function onItemDragEnter(e: DragEvent): void {
-  const el = (e.target as HTMLElement)?.closest?.('.menu-item')
-  if (!el) return
+function highlightItem(el: HTMLElement): void {
   clearItemHighlights()
-  el.classList.add('drag-over')
+  const item = el.closest?.('.menu-item')
+  if (item) item.classList.add('drag-over')
+}
+
+function openSubmenu(cmdId: string): void {
+  if (activeSubmenuId.value === cmdId) return
+  const wasOpen = !!activeSubmenuId.value
+  activeSubmenuId.value = cmdId
+  if (!wasOpen) {
+    window.asukaAPI?.openSubmenu()
+  }
+}
+
+function closeSubmenu(): void {
+  if (!activeSubmenuId.value) return
+  activeSubmenuId.value = null
+  submenuOnLeft.value = false
+  window.asukaAPI?.closeSubmenu()
+}
+
+// -- drag mode handlers --
+// Drag submenu: only close when drag leaves the window entirely (global dragleave with relatedTarget === null).
+// onItemDragEnter opens/closes submenu based on which parent item is hovered.
+
+function onItemDragEnter(e: DragEvent): void {
+  highlightItem(e.target as HTMLElement)
+  const el = (e.target as HTMLElement)?.closest?.('.menu-item') as HTMLElement | null
+  if (!el) return
+
+  const cmdId = el.dataset.command
+  const cmd = cmdId ? findCommand(commands.value, cmdId) : null
+
+  if (cmd?.submenu && cmd.submenu.length > 0) {
+    openSubmenu(cmdId)
+  } else {
+    closeSubmenu()
+  }
 }
 
 function onItemDragLeave(e: DragEvent): void {
@@ -61,7 +112,39 @@ function onItemDragLeave(e: DragEvent): void {
   el.classList.remove('drag-over')
 }
 
-function onClickItem(commandId: string, _event: MouseEvent): void {
+// -- click / clipboard mode handlers --
+// ONLY mouseenter drives state. No mouseleave. Submenu visibility depends on last hovered parent.
+
+function onParentItemMouseEnter(cmdId: string): void {
+  const cmd = findCommand(commands.value, cmdId)
+  if (cmd?.submenu && cmd.submenu.length > 0) {
+    openSubmenu(cmdId)
+  } else {
+    closeSubmenu()
+  }
+}
+
+// -- click handlers --
+
+function onClickItem(commandId: string): void {
+  const cmd = findCommand(commands.value, commandId)
+  if (cmd?.submenu) {
+    if (activeSubmenuId.value === commandId) {
+      closeSubmenu()
+    } else {
+      openSubmenu(commandId)
+    }
+    return
+  }
+
+  if (activeSubmenuId.value) {
+    const parent = findParent(commands.value, commandId)
+    if (parent) {
+      // eslint-disable-next-line no-console
+      console.log(`[${ts()}] [ui] click submenu-item ${parent.id}/${commandId}`)
+    }
+  }
+
   // eslint-disable-next-line no-console
   console.log(`[${ts()}] [ui] click menu-item commandId=${commandId}`)
   window.asukaAPI?.reportClick(commandId)
@@ -69,18 +152,17 @@ function onClickItem(commandId: string, _event: MouseEvent): void {
 
 function onBubbleMouseLeave(): void {
   if ((source.value !== 'clipboard' && source.value !== 'context') || !expanded.value) return
+  closeSubmenu()
   window.asukaAPI?.reportBlur()
 }
 
 function onBubbleMouseEnter(): void {
-  // placeholder for future use
+  // placeholder
 }
 
 function onContextMenu(e: MouseEvent): void {
   if (expanded.value) return
   e.preventDefault()
-  // eslint-disable-next-line no-console
-  console.log(`[${ts()}] [ui] contextmenu at (${e.screenX},${e.screenY})`)
   window.asukaAPI?.reportContextMenu(e.screenX, e.screenY)
 }
 
@@ -117,12 +199,20 @@ onMounted(() => {
     expanded.value = true
     source.value = payload.source
     commands.value = payload.commands
+    activeSubmenuId.value = null
+    submenuOnLeft.value = false
   })
 
   unsubCollapse = api?.onCollapse(() => {
     expanded.value = false
     dragHover.value = false
+    activeSubmenuId.value = null
+    submenuOnLeft.value = false
     clearItemHighlights()
+  })
+
+  unsubSubmenuState = api?.onSubmenuState((state) => {
+    submenuOnLeft.value = state.onLeft
   })
 
   document.addEventListener('dragenter', (e) => {
@@ -144,6 +234,7 @@ onMounted(() => {
     if (e.relatedTarget === null) {
       dragHover.value = false
       clearItemHighlights()
+      closeSubmenu()
       api?.reportDragLeave()
     }
   })
@@ -154,6 +245,7 @@ onMounted(() => {
 
     dragHover.value = false
     clearItemHighlights()
+    closeSubmenu()
 
     const dt = e.dataTransfer
     if (!dt) return
@@ -194,7 +286,13 @@ onMounted(() => {
     let command: string | null = null
     const target = (e.target as HTMLElement)?.closest?.('.menu-item')
     if (target instanceof HTMLElement) {
-      command = target.dataset.command ?? null
+      const cmdId = target.dataset.command
+      if (cmdId) {
+        const cmd = findCommand(commands.value, cmdId)
+        if (cmd && !cmd.submenu) {
+          command = cmdId
+        }
+      }
     }
 
     api?.reportDrop({ items, command })
@@ -204,13 +302,14 @@ onMounted(() => {
 onUnmounted(() => {
   unsubExpand?.()
   unsubCollapse?.()
+  unsubSubmenuState?.()
 })
 </script>
 
 <template>
   <div
     class="bubble"
-    :class="{ expanded, 'drag-hover': dragHover }"
+    :class="{ expanded, 'drag-hover': dragHover, 'submenu-left': submenuOnLeft }"
     :style="getMenuStyle()"
     @mouseenter="onBubbleMouseEnter"
     @mouseleave="onBubbleMouseLeave"
@@ -219,24 +318,72 @@ onUnmounted(() => {
   >
     <div v-if="!expanded" class="bubble-icon">&#x1F31F;</div>
 
-    <div v-if="expanded" class="menu-items">
+    <div v-if="expanded" class="menu-body">
+      <!-- Submenu on LEFT (when screen-right insufficient) -->
       <div
-        v-for="item in commands"
-        :key="item.id"
-        class="menu-item"
-        :data-command="item.id"
-        @dragenter.prevent="onItemDragEnter($event)"
-        @dragleave.prevent="onItemDragLeave($event)"
-        @dragover.prevent
-        @click.stop="onClickItem(item.id, $event)"
+        v-if="activeSubmenu && submenuOnLeft"
+        class="submenu-column submenu-left-col"
       >
-        <span class="item-icon">{{ item.icon }}</span>
-        <span class="item-label">{{ item.name }}</span>
-        <span class="item-hint">{{ source === 'drag' ? 'drop' : 'click' }}</span>
+        <div
+          v-for="sitem in activeSubmenu.submenu"
+          :key="sitem.id"
+          class="menu-item submenu-item"
+          :data-command="sitem.id"
+          @dragenter.prevent="highlightItem($event.target as HTMLElement)"
+          @dragleave.prevent
+          @dragover.prevent
+          @click.stop="onClickItem(sitem.id)"
+        >
+          <span class="item-icon">{{ sitem.icon }}</span>
+          <span class="item-label">{{ sitem.name }}</span>
+          <span class="item-hint">{{ source === 'drag' ? 'drop' : 'click' }}</span>
+        </div>
+      </div>
+
+      <!-- Main parent menu column -->
+      <div class="main-column">
+        <div
+          v-for="item in commands"
+          :key="item.id"
+          class="menu-item"
+          :class="{ 'has-submenu': !!item.submenu?.length, 'submenu-active': activeSubmenuId === item.id }"
+          :data-command="item.id"
+          @dragenter.prevent="onItemDragEnter($event)"
+          @dragleave.prevent="onItemDragLeave($event)"
+          @dragover.prevent
+          @mouseenter="onParentItemMouseEnter(item.id)"
+          @click.stop="onClickItem(item.id)"
+        >
+          <span class="item-icon">{{ item.icon }}</span>
+          <span class="item-label">{{ item.name }}</span>
+          <span v-if="item.submenu?.length" class="item-arrow">{{ submenuOnLeft ? '&#9664;' : '&#9654;' }}</span>
+          <span v-else class="item-hint">{{ source === 'drag' ? 'drop' : 'click' }}</span>
+        </div>
+      </div>
+
+      <!-- Submenu on RIGHT (default) -->
+      <div
+        v-if="activeSubmenu && !submenuOnLeft"
+        class="submenu-column submenu-right-col"
+      >
+        <div
+          v-for="sitem in activeSubmenu.submenu"
+          :key="sitem.id"
+          class="menu-item submenu-item"
+          :data-command="sitem.id"
+          @dragenter.prevent="highlightItem($event.target as HTMLElement)"
+          @dragleave.prevent
+          @dragover.prevent
+          @click.stop="onClickItem(sitem.id)"
+        >
+          <span class="item-icon">{{ sitem.icon }}</span>
+          <span class="item-label">{{ sitem.name }}</span>
+          <span class="item-hint">{{ source === 'drag' ? 'drop' : 'click' }}</span>
+        </div>
       </div>
     </div>
 
-    <div v-if="expanded" class="status">Asuka v0.1.0</div>
+    <div v-if="expanded" class="status">Asuka v0.0.0</div>
   </div>
 </template>
 
@@ -251,6 +398,7 @@ onUnmounted(() => {
   --bg-panel: #1e1e2e;
   --bg-item: rgba(255, 255, 255, 0.04);
   --bg-item-hover: rgba(100, 180, 255, 0.12);
+  --bg-submenu: rgba(0, 0, 0, 0.2);
   --text: #cdd6f4;
   --text-dim: #6c7086;
   --border: rgba(255, 255, 255, 0.08);
@@ -295,6 +443,7 @@ body,
 
 .bubble.expanded {
   border-radius: 12px;
+  cursor: default;
   flex-direction: column;
   justify-content: flex-start;
   padding: 8px;
@@ -308,11 +457,11 @@ body,
   transition: opacity 0.2s;
 }
 
-.menu-items {
+.menu-body {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex: 1;
   width: 100%;
+  min-height: 0;
   opacity: 0;
   transform: translateY(-8px);
   transition:
@@ -320,9 +469,39 @@ body,
     transform 0.2s;
 }
 
-.bubble.expanded .menu-items {
+.bubble.expanded .menu-body {
   opacity: 1;
   transform: translateY(0);
+}
+
+.main-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.submenu-column {
+  width: 176px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-submenu);
+  border-radius: 6px;
+}
+
+.submenu-right-col {
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
+.submenu-left-col {
+  margin-right: 8px;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
 }
 
 .menu-item {
@@ -335,6 +514,7 @@ body,
   font-size: 13px;
   transition: background 0.12s;
   cursor: default;
+  white-space: nowrap;
 }
 
 .menu-item:hover {
@@ -347,6 +527,10 @@ body,
   outline-offset: -1px;
 }
 
+.menu-item.submenu-active {
+  background: var(--bg-item-hover);
+}
+
 .menu-item .item-icon {
   font-size: 18px;
   width: 24px;
@@ -356,7 +540,6 @@ body,
 
 .menu-item .item-label {
   flex: 1;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -364,6 +547,21 @@ body,
 .menu-item .item-hint {
   font-size: 10px;
   color: var(--text-dim);
+}
+
+.menu-item .item-arrow {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.submenu-item {
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.submenu-item .item-icon {
+  font-size: 16px;
+  width: 20px;
 }
 
 .status {

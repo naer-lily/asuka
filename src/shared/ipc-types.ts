@@ -10,13 +10,16 @@ export interface DropReportPayload {
   command: string | null
 }
 
+export interface CommandItem {
+  id: string
+  pluginId: string
+  name: string
+  icon: string
+  submenu?: CommandItem[]
+}
+
 export interface ExpandMenuPayload {
-  commands: {
-    id: string
-    pluginId: string
-    name: string
-    icon: string
-  }[]
+  commands: CommandItem[]
   source: 'drag' | 'clipboard' | 'context'
 }
 

@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { IPC } from '@shared/ipc-channels'
 import type { DropReportPayload, ClickExecutePayload } from '@shared/ipc-types'
 import { ts } from '@shared/utils'
-import { expandToMenu, collapseToBubble, getBubbleWindow, expandContextMenu, isExpanded, setBubblePosition } from './bubble-window'
+import { expandToMenu, collapseToBubble, getBubbleWindow, expandContextMenu, isExpanded, setBubblePosition, openSubmenu, closeSubmenu } from './bubble-window'
 import { getCurrentData, clearData } from './clipboard-monitor'
 
 export function registerIpc(): void {
@@ -83,5 +83,13 @@ export function registerIpc(): void {
     // eslint-disable-next-line no-console
     console.log(`[${ts()}] [main] IPC BLUR`)
     collapseToBubble()
+  })
+
+  ipcMain.on(IPC.SUBMENU_OPEN, () => {
+    openSubmenu()
+  })
+
+  ipcMain.on(IPC.SUBMENU_CLOSE, () => {
+    closeSubmenu()
   })
 }

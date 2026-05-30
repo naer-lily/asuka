@@ -11,6 +11,9 @@ export const IPC = {
   BUBBLE_CONTEXT: 'asuka:bubble-context',
   DRAG_START: 'asuka:drag-start',
   DRAG_MOVE: 'asuka:drag-move',
+  SUBMENU_OPEN: 'asuka:submenu-open',
+  SUBMENU_CLOSE: 'asuka:submenu-close',
+  SUBMENU_STATE: 'asuka:submenu-state',
 
   TOAST: 'asuka:toast',
   LOG: 'asuka:log',

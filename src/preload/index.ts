@@ -40,6 +40,12 @@ const api = {
   reportContextMenu: (x: number, y: number) => {
     ipcRenderer.send(IPC.BUBBLE_CONTEXT, { x, y })
   },
+  openSubmenu: () => {
+    ipcRenderer.send(IPC.SUBMENU_OPEN)
+  },
+  closeSubmenu: () => {
+    ipcRenderer.send(IPC.SUBMENU_CLOSE)
+  },
   onExpand: (cb: (payload: ExpandMenuPayload) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: ExpandMenuPayload): void => {
       // eslint-disable-next-line no-console
@@ -57,6 +63,13 @@ const api = {
     }
     ipcRenderer.on(IPC.COLLAPSE, handler)
     return (): void => { ipcRenderer.removeListener(IPC.COLLAPSE, handler) }
+  },
+  onSubmenuState: (cb: (state: { active: boolean; onLeft: boolean }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: { active: boolean; onLeft: boolean }): void => {
+      cb(state)
+    }
+    ipcRenderer.on(IPC.SUBMENU_STATE, handler)
+    return (): void => { ipcRenderer.removeListener(IPC.SUBMENU_STATE, handler) }
   }
 }
 
