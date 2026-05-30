@@ -149,9 +149,13 @@ function onParentItemMouseEnter(cmdId: string): void {
 
   if (cmd?.submenu && cmd.submenu.length > 0) {
     if (activeSubmenuId.value !== cmdId) {
-      parentSwitchTimer = setTimeout(() => {
+      if (!activeSubmenuId.value) {
         openSubmenu(cmdId)
-      }, PARENT_SWITCH_MS)
+      } else {
+        parentSwitchTimer = setTimeout(() => {
+          openSubmenu(cmdId)
+        }, PARENT_SWITCH_MS)
+      }
     }
   } else {
     if (activeSubmenuId.value) {
