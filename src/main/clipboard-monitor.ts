@@ -101,13 +101,13 @@ function onClipboardChange(): void {
     debounceId = null
     if (parsing) return
     parseAndExpand().catch(err => { console.error('[clipboard] parse error:', err) })
-  }, 300)
+  }, 50)
 }
 
 export function start(): void {
   if (nativeClipboard) {
     // eslint-disable-next-line no-console
-    console.log(`[${ts()}] [clipboard] monitoring started (native AddClipboardFormatListener, debounce 300ms)`)
+    console.log(`[${ts()}] [clipboard] monitoring started (native AddClipboardFormatListener, debounce 50ms)`)
     nativeClipboard.start(onClipboardChange)
   } else {
     console.warn('[clipboard] native addon not available, clipboard monitoring disabled')

@@ -1,6 +1,6 @@
 {
   "name": "asuka",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Asuka - Desktop floating bubble command launcher",
   "main": "./out/main/index.js",
   "scripts": {

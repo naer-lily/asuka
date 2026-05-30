@@ -180,6 +180,13 @@ module.exports = plugin
       }
     },
     {
+      label: '重新启动',
+      click: () => {
+        app.relaunch()
+        app.quit()
+      }
+    },
+    {
       label: '退出 Asuka',
       click: () => {
         app.quit()
