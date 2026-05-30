@@ -99,12 +99,28 @@ function onItemDragEnter(e: DragEvent): void {
   if (!el) return
 
   const cmdId = el.dataset.command
-  const cmd = cmdId ? findCommand(commands.value, cmdId) : null
+  if (!cmdId || cmdId === pendingParentId) return
+
+  const cmd = findCommand(commands.value, cmdId)
+  cancelParentSwitch()
+  pendingParentId = cmdId
 
   if (cmd?.submenu && cmd.submenu.length > 0) {
-    openSubmenu(cmdId)
+    if (activeSubmenuId.value !== cmdId) {
+      if (!activeSubmenuId.value) {
+        openSubmenu(cmdId)
+      } else {
+        parentSwitchTimer = setTimeout(() => {
+          openSubmenu(cmdId)
+        }, PARENT_SWITCH_MS)
+      }
+    }
   } else {
-    closeSubmenu()
+    if (activeSubmenuId.value) {
+      parentSwitchTimer = setTimeout(() => {
+        closeSubmenu()
+      }, PARENT_SWITCH_MS)
+    }
   }
 }
 
@@ -166,9 +182,14 @@ function onParentItemMouseEnter(cmdId: string): void {
   }
 }
 
-function onSubmenuZoneMouseEnter(): void {
+function onSubmenuZoneEnter(): void {
   cancelParentSwitch()
   cancelBubbleLeave()
+}
+
+function onSubmenuItemDragEnter(e: DragEvent): void {
+  highlightItem(e.target as HTMLElement)
+  onSubmenuZoneEnter()
 }
 
 // -- click handlers --
@@ -380,15 +401,16 @@ onUnmounted(() => {
       <div
         v-if="activeSubmenu && submenuOnLeft"
         class="submenu-column submenu-left-col"
-        @mouseenter="onSubmenuZoneMouseEnter"
+        @mouseenter="onSubmenuZoneEnter"
+        @dragenter.prevent="onSubmenuZoneEnter"
       >
         <div
           v-for="sitem in activeSubmenu.submenu"
           :key="sitem.id"
           class="menu-item submenu-item"
           :data-command="sitem.id"
-          @mouseenter="onSubmenuZoneMouseEnter"
-          @dragenter.prevent="highlightItem($event.target as HTMLElement)"
+          @mouseenter="onSubmenuZoneEnter"
+          @dragenter.prevent="onSubmenuItemDragEnter($event)"
           @dragleave.prevent
           @dragover.prevent
           @click.stop="onClickItem(sitem.id)"
@@ -424,15 +446,16 @@ onUnmounted(() => {
       <div
         v-if="activeSubmenu && !submenuOnLeft"
         class="submenu-column submenu-right-col"
-        @mouseenter="onSubmenuZoneMouseEnter"
+        @mouseenter="onSubmenuZoneEnter"
+        @dragenter.prevent="onSubmenuZoneEnter"
       >
         <div
           v-for="sitem in activeSubmenu.submenu"
           :key="sitem.id"
           class="menu-item submenu-item"
           :data-command="sitem.id"
-          @mouseenter="onSubmenuZoneMouseEnter"
-          @dragenter.prevent="highlightItem($event.target as HTMLElement)"
+          @mouseenter="onSubmenuZoneEnter"
+          @dragenter.prevent="onSubmenuItemDragEnter($event)"
           @dragleave.prevent
           @dragover.prevent
           @click.stop="onClickItem(sitem.id)"
