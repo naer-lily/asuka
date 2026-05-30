@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
+const PARENT_SWITCH_MS = 100
+const BUBBLE_LEAVE_MS = 100
+
 interface CommandItem {
   id: string
   pluginId: string
@@ -120,6 +123,7 @@ function onItemDragLeave(e: DragEvent): void {
 
 let parentSwitchTimer: ReturnType<typeof setTimeout> | null = null
 let pendingParentId: string | null = null
+let bubbleLeaveTimer: ReturnType<typeof setTimeout> | null = null
 
 function cancelParentSwitch(): void {
   if (parentSwitchTimer) {
@@ -127,6 +131,13 @@ function cancelParentSwitch(): void {
     parentSwitchTimer = null
   }
   pendingParentId = null
+}
+
+function cancelBubbleLeave(): void {
+  if (bubbleLeaveTimer) {
+    clearTimeout(bubbleLeaveTimer)
+    bubbleLeaveTimer = null
+  }
 }
 
 function onParentItemMouseEnter(cmdId: string): void {
@@ -140,19 +151,20 @@ function onParentItemMouseEnter(cmdId: string): void {
     if (activeSubmenuId.value !== cmdId) {
       parentSwitchTimer = setTimeout(() => {
         openSubmenu(cmdId)
-      }, 100)
+      }, PARENT_SWITCH_MS)
     }
   } else {
     if (activeSubmenuId.value) {
       parentSwitchTimer = setTimeout(() => {
         closeSubmenu()
-      }, 100)
+      }, PARENT_SWITCH_MS)
     }
   }
 }
 
 function onSubmenuZoneMouseEnter(): void {
   cancelParentSwitch()
+  cancelBubbleLeave()
 }
 
 // -- click handlers --
@@ -183,11 +195,15 @@ function onClickItem(commandId: string): void {
 
 function onBubbleMouseLeave(): void {
   if ((source.value !== 'clipboard' && source.value !== 'context') || !expanded.value) return
-  closeSubmenu()
-  window.asukaAPI?.reportBlur()
+  cancelBubbleLeave()
+  bubbleLeaveTimer = setTimeout(() => {
+    closeSubmenu()
+    window.asukaAPI?.reportBlur()
+  }, BUBBLE_LEAVE_MS)
 }
 
 function onBubbleMouseEnter(): void {
+  cancelBubbleLeave()
   // placeholder
 }
 
@@ -233,6 +249,7 @@ onMounted(() => {
     activeSubmenuId.value = null
     submenuOnLeft.value = false
     cancelParentSwitch()
+    cancelBubbleLeave()
   })
 
   unsubCollapse = api?.onCollapse(() => {
@@ -265,10 +282,13 @@ onMounted(() => {
   document.addEventListener('dragleave', (e) => {
     e.preventDefault()
     if (e.relatedTarget === null) {
-      dragHover.value = false
-      clearItemHighlights()
-      closeSubmenu()
-      api?.reportDragLeave()
+      cancelBubbleLeave()
+      bubbleLeaveTimer = setTimeout(() => {
+        dragHover.value = false
+        clearItemHighlights()
+        closeSubmenu()
+        api?.reportDragLeave()
+      }, BUBBLE_LEAVE_MS)
     }
   })
 
