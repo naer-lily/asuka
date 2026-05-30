@@ -80,6 +80,7 @@ function openSubmenu(cmdId: string): void {
 
 function closeSubmenu(): void {
   if (!activeSubmenuId.value) return
+  cancelParentSwitch()
   activeSubmenuId.value = null
   submenuOnLeft.value = false
   window.asukaAPI?.closeSubmenu()
@@ -113,15 +114,45 @@ function onItemDragLeave(e: DragEvent): void {
 }
 
 // -- click / clipboard mode handlers --
-// ONLY mouseenter drives state. No mouseleave. Submenu visibility depends on last hovered parent.
+// mouseenter on parent items drives submenu visibility, but with a 100ms debounce.
+// Entering the submenu zone cancels the debounce, so diagonal mouse moves
+// that briefly cross other parent items don't close the submenu.
+
+let parentSwitchTimer: ReturnType<typeof setTimeout> | null = null
+let pendingParentId: string | null = null
+
+function cancelParentSwitch(): void {
+  if (parentSwitchTimer) {
+    clearTimeout(parentSwitchTimer)
+    parentSwitchTimer = null
+  }
+  pendingParentId = null
+}
 
 function onParentItemMouseEnter(cmdId: string): void {
+  if (cmdId === pendingParentId) return
+
   const cmd = findCommand(commands.value, cmdId)
+  cancelParentSwitch()
+  pendingParentId = cmdId
+
   if (cmd?.submenu && cmd.submenu.length > 0) {
-    openSubmenu(cmdId)
+    if (activeSubmenuId.value !== cmdId) {
+      parentSwitchTimer = setTimeout(() => {
+        openSubmenu(cmdId)
+      }, 100)
+    }
   } else {
-    closeSubmenu()
+    if (activeSubmenuId.value) {
+      parentSwitchTimer = setTimeout(() => {
+        closeSubmenu()
+      }, 100)
+    }
   }
+}
+
+function onSubmenuZoneMouseEnter(): void {
+  cancelParentSwitch()
 }
 
 // -- click handlers --
@@ -201,6 +232,7 @@ onMounted(() => {
     commands.value = payload.commands
     activeSubmenuId.value = null
     submenuOnLeft.value = false
+    cancelParentSwitch()
   })
 
   unsubCollapse = api?.onCollapse(() => {
@@ -208,6 +240,7 @@ onMounted(() => {
     dragHover.value = false
     activeSubmenuId.value = null
     submenuOnLeft.value = false
+    cancelParentSwitch()
     clearItemHighlights()
   })
 
@@ -323,12 +356,14 @@ onUnmounted(() => {
       <div
         v-if="activeSubmenu && submenuOnLeft"
         class="submenu-column submenu-left-col"
+        @mouseenter="onSubmenuZoneMouseEnter"
       >
         <div
           v-for="sitem in activeSubmenu.submenu"
           :key="sitem.id"
           class="menu-item submenu-item"
           :data-command="sitem.id"
+          @mouseenter="onSubmenuZoneMouseEnter"
           @dragenter.prevent="highlightItem($event.target as HTMLElement)"
           @dragleave.prevent
           @dragover.prevent
@@ -365,12 +400,14 @@ onUnmounted(() => {
       <div
         v-if="activeSubmenu && !submenuOnLeft"
         class="submenu-column submenu-right-col"
+        @mouseenter="onSubmenuZoneMouseEnter"
       >
         <div
           v-for="sitem in activeSubmenu.submenu"
           :key="sitem.id"
           class="menu-item submenu-item"
           :data-command="sitem.id"
+          @mouseenter="onSubmenuZoneMouseEnter"
           @dragenter.prevent="highlightItem($event.target as HTMLElement)"
           @dragleave.prevent
           @dragover.prevent
