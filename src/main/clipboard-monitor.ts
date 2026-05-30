@@ -120,8 +120,13 @@ async function parseAndExpand(): Promise<void> {
 
     const pos = screen.getCursorScreenPoint()
     // eslint-disable-next-line no-console
-    console.log(`[${ts()}] [clipboard] expanding at cursor (${pos.x},${pos.y})`)
-    expandAtCursor(pos.x, pos.y)
+    console.log(`[${ts()}] [clipboard] expanding at cursor (${pos.x},${pos.y}) with ${items.length} items`)
+    const shown = expandAtCursor(items)
+    if (!shown) {
+      // eslint-disable-next-line no-console
+      console.log(`[${ts()}] [clipboard] no matching commands, skipping`)
+      clearData()
+    }
   } finally {
     parsing = false
   }

@@ -1,3 +1,5 @@
+<img src="resources/icon@128.png" alt="Asuka" width="96" align="right">
+
 # Asuka
 
 桌面悬浮球 — 拖文件到球上自动展开命令菜单，松手触发插件。复制文件/文本后在鼠标旁弹出菜单，点击执行；失焦即收拢。
@@ -41,6 +43,10 @@ src/preload/       contextBridge — 向渲染进程暴露 IPC API
 src/renderer/      Vue 3 SPA — 悬浮球 UI（双栏子菜单布局）
 src/shared/        共享类型与常量
 ```
+
+## 已知限制
+
+- **子菜单不参与高度计算**：菜单高度仅按一级命令数计算（`N × 44 + 19`）。当某个子菜单的命令数超过一级命令数时，子菜单区域会溢出被裁剪。
 
 ## License
 

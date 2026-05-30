@@ -19,5 +19,10 @@ export const IPC = {
   LOG: 'asuka:log',
   GET_CONFIG: 'asuka:get-config',
   SET_CONFIG: 'asuka:set-config',
-  THEME_CHANGED: 'asuka:theme-changed'
+  THEME_CHANGED: 'asuka:theme-changed',
+  CONFIG_CHANGED: 'asuka:config-changed',
+
+  OPEN_SETTINGS: 'asuka:open-settings',
+  RELOAD_PLUGINS: 'asuka:reload-plugins',
+  RESET_BUBBLE: 'asuka:reset-bubble'
 } as const

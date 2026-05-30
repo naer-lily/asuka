@@ -18,7 +18,15 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/preload/index.ts'),
+          'settings-preload': resolve('src/preload/settings-preload.ts')
+        }
+      }
+    }
   },
   renderer: {
     resolve: {
@@ -27,6 +35,14 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [vue()]
+    plugins: [vue()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/renderer/index.html'),
+          settings: resolve('src/renderer/settings.html')
+        }
+      }
+    }
   }
 })

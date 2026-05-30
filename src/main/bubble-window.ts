@@ -1,7 +1,10 @@
-import { BrowserWindow, screen } from 'electron'
+import { BrowserWindow, screen, nativeImage, app } from 'electron'
 import { join } from 'path'
-import type { ExpandMenuPayload } from '@shared/ipc-types'
+import type { ExpandMenuPayload, DragMetadata, CommandItem, DropPayload } from '@shared/ipc-types'
 import { ts, computeMenuHeight, clampMenuBounds } from '@shared/utils'
+import { pluginHost } from './plugin-host'
+import { getCurrentData } from './clipboard-monitor'
+import { config } from './config'
 
 const BUBBLE_SIZE = 56
 const MENU_W = 240
@@ -16,42 +19,16 @@ let submenuOnLeft = false
 let bubbleHomeX = 0
 let bubbleHomeY = 0
 
-const MOCK_COMMANDS = [
-  { id: 'compress', pluginId: 'builtin', name: '压缩为 ZIP', icon: '🗜️' },
-  { id: 'convert', pluginId: 'builtin', name: '转换为 WebP', icon: '🖼️' },
-  { id: 'upload', pluginId: 'builtin', name: '上传到图床', icon: '🔗' },
-  { id: 'translate', pluginId: 'builtin', name: '翻译为中文', icon: '🌐' },
-  { id: 'search', pluginId: 'builtin', name: '搜索', icon: '🔍' },
-  {
-    id: 'save-as',
-    pluginId: 'builtin',
-    name: '另存为...',
-    icon: '📦',
-    submenu: [
-      { id: 'save-desktop', pluginId: 'builtin', name: '桌面', icon: '🖥️' },
-      { id: 'save-docs', pluginId: 'builtin', name: '文档', icon: '📁' },
-      { id: 'save-original', pluginId: 'builtin', name: '原目录保留原名', icon: '📄' },
-      { id: 'save-rename', pluginId: 'builtin', name: '重命名...', icon: '✏️' }
-    ]
-  }
-]
+const NO_MATCH_ITEM: CommandItem = {
+  id: '__no_match__',
+  pluginId: 'builtin',
+  name: '没有匹配命令',
+  icon: '🚫'
+}
 
-const MOCK_CONTEXT_COMMANDS = [
-  { id: 'open-workspace', pluginId: 'builtin', name: '打开临时工作区', icon: '📋' },
-  { id: 'clipboard-history', pluginId: 'builtin', name: '剪贴板历史', icon: '📊' },
-  { id: 'settings', pluginId: 'builtin', name: '设置', icon: '🔧' },
-  { id: 'reload-plugins', pluginId: 'builtin', name: '重载插件', icon: '🔄' },
-  { id: 'quit', pluginId: 'builtin', name: '退出', icon: '❌' }
-]
-
-function sendExpand(source: 'drag' | 'clipboard' | 'context'): void {
-  const map = {
-    drag: MOCK_COMMANDS,
-    clipboard: MOCK_COMMANDS,
-    context: MOCK_CONTEXT_COMMANDS
-  }
+function sendExpand(source: 'drag' | 'clipboard' | 'context', commands: CommandItem[]): void {
   const payload: ExpandMenuPayload = {
-    commands: map[source],
+    commands,
     source
   }
   bubbleWin!.webContents.send('asuka:expand-menu', payload)
@@ -66,10 +43,16 @@ function sendSubmenuState(active: boolean, onLeft: boolean): void {
 }
 
 export function createBubbleWindow(): BrowserWindow {
+  const cfg = config.get()
   const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workArea
 
-  bubbleHomeX = screenW - BUBBLE_SIZE - 24
-  bubbleHomeY = Math.round((screenH - BUBBLE_SIZE) / 2)
+  if (cfg.bubbleX && cfg.bubbleY) {
+    bubbleHomeX = cfg.bubbleX
+    bubbleHomeY = cfg.bubbleY
+  } else {
+    bubbleHomeX = screenW - BUBBLE_SIZE - 24
+    bubbleHomeY = Math.round((screenH - BUBBLE_SIZE) / 2)
+  }
 
   bubbleWin = new BrowserWindow({
     x: bubbleHomeX,
@@ -94,7 +77,12 @@ export function createBubbleWindow(): BrowserWindow {
     bubbleWin = null
   })
 
-  // eslint-disable-next-line no-console
+  const iconPath = join(app.getAppPath(), 'resources', 'icon.png')
+  const iconDataUrl = nativeImage.createFromPath(iconPath).toDataURL()
+  bubbleWin.webContents.on('dom-ready', () => {
+    bubbleWin!.webContents.send('asuka:bubble-icon', iconDataUrl)
+  })
+
   console.log(`[${ts()}] [main] bubble window created at (${bubbleHomeX},${bubbleHomeY}) size=${BUBBLE_SIZE}`)
 
   return bubbleWin
@@ -107,6 +95,7 @@ export function getBubbleWindow(): BrowserWindow | null {
 export function setBubblePosition(x: number, y: number): void {
   bubbleHomeX = x
   bubbleHomeY = y
+  config.patch({ bubbleX: x, bubbleY: y })
 }
 
 export function isExpanded(): boolean {
@@ -146,8 +135,7 @@ export function openSubmenu(): void {
   submenuOpen = true
   sendSubmenuState(true, submenuOnLeft)
 
-  // eslint-disable-next-line no-console
-  console.log(`[${ts()}] [main] submenu open, onLeft=${submenuOnLeft}, fitsRight=${fitsOnRight}`)
+  console.log(`[${ts()}] [main] submenu open, onLeft=${submenuOnLeft}`)
 }
 
 export function closeSubmenu(): void {
@@ -165,80 +153,96 @@ export function closeSubmenu(): void {
     height: bounds.height
   })
 
-  // eslint-disable-next-line no-console
-  console.log(`[${ts()}] [main] submenu close`)
-
   sendSubmenuState(false, false)
 }
 
-export function expandToMenu(): void {
-  // eslint-disable-next-line no-console
-  console.log(`[${ts()}] [main] expandToMenu() called, expanded=${expanded}`)
-
+export function expandToMenu(meta: DragMetadata): void {
   if (!bubbleWin || expanded) return
+
+  const commands = pluginHost.collectDragCommands(meta)
+
   expanded = true
   submenuOpen = false
   submenuOnLeft = false
+
+  const displayCommands = commands.length > 0 ? commands : [NO_MATCH_ITEM]
+  const menuH = computeMenuHeight(displayCommands.length)
 
   const bounds = bubbleWin.getBounds()
   const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workArea
-  const menuH = computeMenuHeight(MOCK_COMMANDS.length)
 
-  const { x, y } = clampMenuBounds(
-    bounds.x,
-    Math.max(8, bounds.y - 40),
+  let targetX = bounds.x
+  let targetY = Math.max(8, bounds.y - 40)
+
+  const clamped = clampMenuBounds(
+    targetX,
+    targetY,
     MENU_W + MENU_PAD * 2,
     menuH,
     screenW,
     screenH
   )
 
-  bubbleWin.setBounds({ x, y, width: MENU_W + MENU_PAD * 2, height: menuH })
+  bubbleWin.setBounds({ x: clamped.x, y: clamped.y, width: MENU_W + MENU_PAD * 2, height: menuH })
 
-  sendExpand('drag')
+  sendExpand('drag', displayCommands)
 }
 
-export function expandAtCursor(cursorX: number, cursorY: number): void {
-  // eslint-disable-next-line no-console
-  console.log(`[${ts()}] [main] expandAtCursor(${cursorX},${cursorY}) expanded=${expanded}`)
+export function expandAtCursor(items: DropPayload[]): boolean {
+  if (!bubbleWin) {
+    console.log(`[${ts()}] [main] expandAtCursor: bubbleWin null`)
+    return false
+  }
+  if (expanded) {
+    console.log(`[${ts()}] [main] expandAtCursor: already expanded, skipping`)
+    return false
+  }
 
-  if (!bubbleWin || expanded) return
+  const commands = pluginHost.collectClipboardCommands(items)
+
+  if (commands.length === 0) return false
+
   expanded = true
   submenuOpen = false
   submenuOnLeft = false
 
-  const display = screen.getDisplayNearestPoint({ x: cursorX, y: cursorY })
+  const display = screen.getDisplayNearestPoint({ x: 0, y: 0 })
+  const cursor = screen.getCursorScreenPoint()
   const { width: screenW, height: screenH } = display.workArea
-  const menuH = computeMenuHeight(MOCK_COMMANDS.length)
+  const menuH = computeMenuHeight(commands.length)
 
-  const { x, y } = clampMenuBounds(
-    cursorX - (MENU_W + MENU_PAD * 2) / 2,
-    cursorY - menuH / 3,
+  const clamped = clampMenuBounds(
+    cursor.x - (MENU_W + MENU_PAD * 2) / 2,
+    cursor.y - menuH / 3,
     MENU_W + MENU_PAD * 2,
     menuH,
     screenW,
     screenH
   )
 
-  bubbleWin.setBounds({ x, y, width: MENU_W + MENU_PAD * 2, height: menuH })
+  bubbleWin.setBounds({ x: clamped.x, y: clamped.y, width: MENU_W + MENU_PAD * 2, height: menuH })
 
-  sendExpand('clipboard')
+  sendExpand('clipboard', commands)
+  return true
 }
 
 export function expandContextMenu(cursorX: number, cursorY: number): void {
-  // eslint-disable-next-line no-console
-  console.log(`[${ts()}] [main] expandContextMenu(${cursorX},${cursorY}) expanded=${expanded}`)
-
   if (!bubbleWin || expanded) return
+
+  const items = getCurrentData()
+  const commands = pluginHost.collectContextCommands(items)
+
   expanded = true
   submenuOpen = false
   submenuOnLeft = false
 
+  const displayCommands = commands.length > 0 ? commands : [NO_MATCH_ITEM]
+  const menuH = computeMenuHeight(displayCommands.length)
+
   const display = screen.getDisplayNearestPoint({ x: cursorX, y: cursorY })
   const { width: screenW, height: screenH } = display.workArea
-  const menuH = computeMenuHeight(MOCK_CONTEXT_COMMANDS.length)
 
-  const { x, y } = clampMenuBounds(
+  const clamped = clampMenuBounds(
     cursorX - (MENU_W + MENU_PAD * 2) / 2,
     cursorY - menuH / 3,
     MENU_W + MENU_PAD * 2,
@@ -247,15 +251,12 @@ export function expandContextMenu(cursorX: number, cursorY: number): void {
     screenH
   )
 
-  bubbleWin.setBounds({ x, y, width: MENU_W + MENU_PAD * 2, height: menuH })
+  bubbleWin.setBounds({ x: clamped.x, y: clamped.y, width: MENU_W + MENU_PAD * 2, height: menuH })
 
-  sendExpand('context')
+  sendExpand('context', displayCommands)
 }
 
 export function collapseToBubble(): void {
-  // eslint-disable-next-line no-console
-  console.log(`[${ts()}] [main] collapseToBubble() called, expanded=${expanded}`)
-
   if (!bubbleWin || !expanded) return
   expanded = false
   submenuOpen = false

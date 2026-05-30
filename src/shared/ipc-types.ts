@@ -1,21 +1,10 @@
-export type DropPayload =
-  | { kind: 'file'; path: string; name: string; ext: string; size: number; mimeType?: string }
-  | { kind: 'text'; content: string }
-  | { kind: 'html'; content: string }
-  | { kind: 'image'; path: string; width?: number; height?: number }
-  | { kind: 'url'; url: string; title?: string }
+import type { DropPayload, CommandItem, DragMetadata } from '@shared/plugin-api'
+
+export type { DropPayload, CommandItem, DragMetadata }
 
 export interface DropReportPayload {
   items: DropPayload[]
   command: string | null
-}
-
-export interface CommandItem {
-  id: string
-  pluginId: string
-  name: string
-  icon: string
-  submenu?: CommandItem[]
 }
 
 export interface ExpandMenuPayload {

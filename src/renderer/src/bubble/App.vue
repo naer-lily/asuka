@@ -1,8 +1,19 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computeMenuHeight } from '@shared/utils'
 
 const PARENT_SWITCH_MS = 300
 const BUBBLE_LEAVE_MS = 100
+
+interface DragMetadata {
+  source: 'drag' | 'clipboard'
+  mimeTypes: string[]
+  fileCount: number
+  hasFiles: boolean
+  hasText: boolean
+  hasHtml: boolean
+  hasImage: boolean
+}
 
 interface CommandItem {
   id: string
@@ -17,6 +28,7 @@ const dragHover = ref(false)
 const source = ref<'drag' | 'clipboard' | 'context'>('drag')
 const commands = ref<CommandItem[]>([])
 const activeSubmenuId = ref<string | null>(null)
+const bubbleIcon = ref('')
 const submenuOnLeft = ref(false)
 
 const activeSubmenu = computed(() => {
@@ -54,11 +66,26 @@ function ts(): string {
   return new Date().toISOString().slice(11, 23)
 }
 
+function extractMetadata(e: DragEvent): DragMetadata {
+  const dt = e.dataTransfer!
+  const items = Array.from(dt.items || [])
+  const fileItems = items.filter(i => i.kind === 'file')
+
+  return {
+    source: 'drag',
+    mimeTypes: dt.types.filter(Boolean),
+    fileCount: fileItems.length,
+    hasFiles: dt.types.includes('Files'),
+    hasText: dt.types.includes('text/plain'),
+    hasHtml: dt.types.includes('text/html'),
+    hasImage: fileItems.some(i => i.type.startsWith('image/'))
+  }
+}
+
 function getMenuStyle(): Record<string, string> {
   if (!expanded.value) return {}
-  const count = commands.value.length || 5
-  const height = Math.min(count * 44 + 24, 360)
-  return { height: `${height}px` }
+  const count = commands.value.length || 1
+  return { height: `${computeMenuHeight(count)}px` }
 }
 
 function clearItemHighlights(): void {
@@ -266,6 +293,11 @@ function onMouseUp(): void {
 
 onMounted(() => {
   const api = window.asukaAPI
+  if (!api) return
+
+  api.onBubbleIcon?.((dataUrl) => {
+    bubbleIcon.value = dataUrl
+  })
 
   unsubExpand = api?.onExpand((payload) => {
     expanded.value = true
@@ -292,11 +324,11 @@ onMounted(() => {
 
   document.addEventListener('dragenter', (e) => {
     e.preventDefault()
-    e.stopPropagation()
     if (isDragging) return
     dragHover.value = true
     if (!expanded.value) {
-      api?.reportDragEnter()
+      const meta = extractMetadata(e)
+      api?.reportDragEnter(meta)
     }
   })
 
@@ -319,7 +351,6 @@ onMounted(() => {
 
   document.addEventListener('drop', (e) => {
     e.preventDefault()
-    e.stopPropagation()
 
     dragHover.value = false
     clearItemHighlights()
@@ -328,22 +359,33 @@ onMounted(() => {
     const dt = e.dataTransfer
     if (!dt) return
 
-    const items: {
+    const items: ({
       kind: 'file'
       path: string
       name: string
       ext: string
       size: number
       mimeType?: string
-    }[] = []
+    } | {
+      kind: 'text'
+      content: string
+    } | {
+      kind: 'html'
+      content: string
+    } | {
+      kind: 'url'
+      url: string
+    })[] = []
 
     if (dt.files && dt.files.length > 0) {
       for (let i = 0; i < dt.files.length; i++) {
         const f = dt.files[i]
+        const filePath = api?.getFilePath(f) || ''
+        console.log('[drop] raw file:', f.name, 'path=', filePath, 'size=', f.size, 'type=', f.type)
         const extMatch = f.name.match(/\.([^.]+)$/)
         items.push({
           kind: 'file',
-          path: f.path || '',
+          path: filePath,
           name: f.name,
           ext: extMatch ? `.${extMatch[1]}` : '',
           size: f.size,
@@ -394,7 +436,9 @@ onUnmounted(() => {
     @mousedown="onMouseDown"
     @contextmenu.prevent="onContextMenu"
   >
-    <div v-if="!expanded" class="bubble-icon">&#x1F31F;</div>
+    <div v-if="!expanded" class="bubble-icon">
+      <img v-if="bubbleIcon" :src="bubbleIcon" alt="Asuka" class="icon-img" />
+    </div>
 
     <div v-if="expanded" class="menu-body">
       <!-- Submenu on LEFT (when screen-right insufficient) -->
@@ -467,15 +511,15 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="expanded" class="status">Asuka v0.0.0</div>
+
   </div>
 </template>
 
 <style>
 * {
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
-  box-sizing: border-box;
 }
 
 :root {
@@ -532,13 +576,19 @@ body,
   justify-content: flex-start;
   padding: 8px;
   width: 100%;
-  min-height: 120px;
 }
 
 .bubble-icon {
   font-size: 24px;
   opacity: 0.85;
   transition: opacity 0.2s;
+}
+
+.icon-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .menu-body {
@@ -592,6 +642,7 @@ body,
   display: flex;
   align-items: center;
   gap: 10px;
+  height: 44px;
   padding: 10px 12px;
   border-radius: 8px;
   color: var(--text);
@@ -646,13 +697,5 @@ body,
 .submenu-item .item-icon {
   font-size: 16px;
   width: 20px;
-}
-
-.status {
-  padding: 4px 12px 8px;
-  font-size: 10px;
-  color: var(--text-dim);
-  width: 100%;
-  text-align: center;
 }
 </style>

@@ -1,6 +1,7 @@
-const ITEM_HEIGHT = 44
-const MENU_PADDING = 24
-const MENU_MAX_H = 360
+export const ITEM_HEIGHT = 44
+export const MENU_PADDING = 19
+export const MENU_MIN_H = 63
+export const MENU_MAX_H = 360
 
 export function ts(): string {
   return new Date().toISOString().slice(11, 23)
@@ -8,7 +9,7 @@ export function ts(): string {
 
 export function computeMenuHeight(itemCount: number): number {
   const count = itemCount || 1
-  return Math.min(count * ITEM_HEIGHT + MENU_PADDING, MENU_MAX_H)
+  return Math.min(Math.max(count * ITEM_HEIGHT + MENU_PADDING, MENU_MIN_H), MENU_MAX_H)
 }
 
 export function clampMenuBounds(
