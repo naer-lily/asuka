@@ -168,15 +168,13 @@ export function expandToMenu(meta: DragMetadata): void {
   const displayCommands = commands.length > 0 ? commands : [NO_MATCH_ITEM]
   const menuH = computeMenuHeight(displayCommands.length)
 
-  const bounds = bubbleWin.getBounds()
-  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workArea
-
-  let targetX = bounds.x
-  let targetY = Math.max(8, bounds.y - 40)
+  const cursor = screen.getCursorScreenPoint()
+  const display = screen.getDisplayNearestPoint(cursor)
+  const { width: screenW, height: screenH } = display.workArea
 
   const clamped = clampMenuBounds(
-    targetX,
-    targetY,
+    cursor.x - (MENU_W + MENU_PAD * 2) / 2,
+    cursor.y - menuH / 3,
     MENU_W + MENU_PAD * 2,
     menuH,
     screenW,

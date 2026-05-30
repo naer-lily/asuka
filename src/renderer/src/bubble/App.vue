@@ -556,8 +556,6 @@ body,
   align-items: center;
   justify-content: center;
   cursor: grab;
-  transition:
-    border-radius 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .bubble:active {
