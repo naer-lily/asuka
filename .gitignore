@@ -3,3 +3,15 @@ out/
 dist/
 .DS_Store
 *.log
+
+# native addon build intermediates
+native/build/*.sln
+native/build/*.vcxproj*
+native/build/config.gypi
+native/build/Release/*.exp
+native/build/Release/*.lib
+native/build/Release/*.pdb
+native/build/Release/*.iobj
+native/build/Release/*.ipdb
+native/build/Release/obj/
+native/build/Release/*.tlog/

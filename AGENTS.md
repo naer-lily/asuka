@@ -22,7 +22,7 @@ A desktop app (Electron) that stays as a floating bubble. Drag files to it → i
 
 5. **File paths from `dataTransfer.files[i].path`**: available when dragging from Windows Explorer. May be empty when dragging from apps like VSCode (they use custom drag formats). Design assumes paths may be absent; plugins self-validate.
 
-6. **Clipboard file list on Windows**: Electron's `clipboard` module does NOT expose `CF_HDROP`. MVP workaround: `powershell -Command "Get-Clipboard -Format FileDropList"`. Replace with a native addon later if latency is unacceptable.
+6. **Clipboard detection is event-driven via native addon**: uses `AddClipboardFormatListener` (hidden message-only window → `WM_CLIPBOARDUPDATE` → Napi::ThreadSafeFunction callback). Replaces the old polling+PowerShell approach. `native/build/Release/clipboard_native.node` reads `CF_HDROP` directly via `GetClipboardData` + `DragQueryFileW`. Fallback: if `.node` fails to load, clipboard monitoring is silently disabled.
 
 7. **`BrowserWindow.getBounds()` 在 Windows DPI 混插时返回设备像素**。例如 150% DPI 下窗口是 56×56 逻辑像素，`getBounds()` 返回 84×84。如果把这个值原样传给 `setBounds()`，它会按逻辑像素解释 → 窗口每帧放大。**解决方案**：拖拽/重设窗口时用常量尺寸（56×56 或 240×320），永远不要从 `getBounds()` 取宽高传给 `setBounds()`。
 
@@ -41,19 +41,23 @@ Do NOT copy: search engine, WebView, form dialogs, prefix matching, auto-activat
 ## Dev commands
 
 ```bash
-# PoC (current validation, plain JS)
-cd poc && npm start
+# Build native addon
+npm run build:native
 
-# Real project (not yet created, electron-vite)
-npm run dev        # dev server
-npm run build      # production build
-npm run typecheck  # tsc --noEmit
+# Dev server (auto-builds native addon)
+npm run dev
+
+# Production build (auto-builds native addon)  
+npm run build
+
+# Type check
+npm run typecheck
 ```
 
 ## Architecture rules
 
 - **Main process holds all logic**. The Vue renderer is a passive UI layer: receives command lists, renders DOM, reports events back to main via IPC. No state machine in the renderer.
-- **No `electron-dragfile-plugin`**. No global mouse hooks. No native addons (except maybe clipboard).
+- **No `electron-dragfile-plugin`**. No global mouse hooks.
 - **One window, two modes**: collapsed bubble (56×56 circle) and expanded menu (240×N panel). Same BrowserWindow, CSS transition.
 - **Plugins run in the main process** with full Node.js access. No sandbox. Same trust model as VSCode extensions.
 - **`execute()` always collapses the menu** — success or failure. Never gets stuck half-expanded.

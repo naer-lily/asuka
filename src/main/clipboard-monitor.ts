@@ -1,5 +1,4 @@
 import { clipboard, screen } from 'electron'
-import { execFile } from 'child_process'
 import { resolve, basename, extname } from 'path'
 import { writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -8,58 +7,23 @@ import { expandAtCursor } from './bubble-window'
 import { ts } from '@shared/utils'
 import type { DropPayload } from '@shared/ipc-types'
 
-let intervalId: ReturnType<typeof setInterval> | null = null
 let debounceId: ReturnType<typeof setTimeout> | null = null
-let lastHash = ''
 let parsing = false
 
 let currentData: DropPayload[] = []
 
-function hash(str: string): string {
-  let h = 0
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h + str.charCodeAt(i)) | 0
+let nativeClipboard: { start: (cb: () => void) => void; stop: () => void; getFilePaths: () => string[] } | null = null
+try {
+  nativeClipboard = require('../../native/build/Release/clipboard_native.node')
+} catch (e) {
+  console.error('[clipboard] native addon failed to load, clipboard monitoring disabled:', (e as Error).message)
+}
+
+function getFileDrop(): string[] {
+  if (nativeClipboard) {
+    return nativeClipboard.getFilePaths()
   }
-  return h.toString(16)
-}
-
-function checkClipboard(): void {
-  const text = clipboard.readText() || ''
-  const html = clipboard.readHTML() || ''
-  const image = clipboard.readImage()
-  const hasImage = !image.isEmpty()
-
-  const fingerprint = `${text.length}:${html.length}:${hasImage}:${text.slice(0, 40)}`
-
-  const h = hash(fingerprint)
-  if (h === lastHash) return
-  lastHash = h
-
-  // eslint-disable-next-line no-console
-  console.log(`[${ts()}] [clipboard] change detected, hash=${h}`)
-
-  if (debounceId) clearTimeout(debounceId)
-  debounceId = setTimeout(() => {
-    debounceId = null
-    if (parsing) return
-    parseAndExpand().catch(err => { console.error('[clipboard] parse error:', err) })
-  }, 300)
-}
-
-async function getFileDrop(): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    execFile('powershell', [
-      '-NoProfile', '-Command',
-      'Get-Clipboard -Format FileDropList | ForEach-Object { $_ }'
-    ], { timeout: 2000, encoding: 'utf-8' }, (err, stdout) => {
-      if (err) {
-        reject(err)
-        return
-      }
-      const lines = (stdout || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-      resolve(lines)
-    })
-  })
+  return []
 }
 
 async function parseAndExpand(): Promise<void> {
@@ -75,21 +39,17 @@ async function parseAndExpand(): Promise<void> {
       items.push({ kind: 'text', content: text })
     }
 
-    try {
-      const lines = await getFileDrop()
-      for (const p of lines) {
-        const full = resolve(p)
-        items.push({
-          kind: 'file',
-          path: full,
-          name: basename(full),
-          ext: extname(full),
-          size: 0,
-          mimeType: undefined
-        })
-      }
-    } catch {
-      // PowerShell may fail if no file drop on clipboard
+    const lines = getFileDrop()
+    for (const p of lines) {
+      const full = resolve(p)
+      items.push({
+        kind: 'file',
+        path: full,
+        name: basename(full),
+        ext: extname(full),
+        size: 0,
+        mimeType: undefined
+      })
     }
 
     const html = clipboard.readHTML()
@@ -132,16 +92,31 @@ async function parseAndExpand(): Promise<void> {
   }
 }
 
-export function start(): void {
+function onClipboardChange(): void {
   // eslint-disable-next-line no-console
-  console.log(`[${ts()}] [clipboard] monitoring started (poll 500ms, debounce 300ms)`)
-  intervalId = setInterval(checkClipboard, 500)
+  console.log(`[${ts()}] [clipboard] change detected (native listener)`)
+
+  if (debounceId) clearTimeout(debounceId)
+  debounceId = setTimeout(() => {
+    debounceId = null
+    if (parsing) return
+    parseAndExpand().catch(err => { console.error('[clipboard] parse error:', err) })
+  }, 300)
+}
+
+export function start(): void {
+  if (nativeClipboard) {
+    // eslint-disable-next-line no-console
+    console.log(`[${ts()}] [clipboard] monitoring started (native AddClipboardFormatListener, debounce 300ms)`)
+    nativeClipboard.start(onClipboardChange)
+  } else {
+    console.warn('[clipboard] native addon not available, clipboard monitoring disabled')
+  }
 }
 
 export function stop(): void {
-  if (intervalId) {
-    clearInterval(intervalId)
-    intervalId = null
+  if (nativeClipboard) {
+    nativeClipboard.stop()
   }
   if (debounceId) {
     clearTimeout(debounceId)

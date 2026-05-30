@@ -4,8 +4,10 @@
   "description": "Asuka - Desktop floating bubble command launcher",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "postinstall": "node-gyp rebuild --directory=native",
+    "build:native": "node-gyp rebuild --directory=native",
+    "dev": "npm run build:native && electron-vite dev",
+    "build": "npm run build:native && electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "vue-tsc --noEmit --project tsconfig.web.json && vue-tsc --noEmit --project tsconfig.node.json",
     "lint": "eslint . && npm run typecheck",
@@ -15,6 +17,7 @@
   "dependencies": {
     "electron-log": "^5.4.4",
     "esbuild": "^0.21.5",
+    "node-addon-api": "^8.8.0",
     "vue": "^3.4.38"
   },
   "devDependencies": {
@@ -25,6 +28,7 @@
     "electron-vite": "^2.3.0",
     "eslint": "^10.4.0",
     "eslint-plugin-vue": "^10.9.1",
+    "node-gyp": "^10.3.1",
     "typescript": "^5.5.4",
     "typescript-eslint": "^8.59.3",
     "vue-eslint-parser": "^10.4.0",
@@ -38,6 +42,7 @@
     },
     "files": [
       "out/**/*",
+      "native/build/Release/*.node",
       "resources/**/*",
       "types/**/*",
       "package.json"
