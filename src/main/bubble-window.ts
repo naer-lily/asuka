@@ -77,7 +77,7 @@ export function createBubbleWindow(): BrowserWindow {
     bubbleWin = null
   })
 
-  const iconPath = join(app.getAppPath(), 'resources', 'icon.png')
+  const iconPath = join(app.getAppPath(), 'resources', 'icon@128.png')
   const iconDataUrl = nativeImage.createFromPath(iconPath).toDataURL()
   bubbleWin.webContents.on('dom-ready', () => {
     bubbleWin!.webContents.send('asuka:bubble-icon', iconDataUrl)

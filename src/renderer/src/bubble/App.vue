@@ -579,14 +579,16 @@ body,
 }
 
 .bubble-icon {
-  font-size: 24px;
-  opacity: 0.85;
-  transition: opacity 0.2s;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .icon-img {
-  width: 32px;
-  height: 32px;
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   object-fit: cover;
 }

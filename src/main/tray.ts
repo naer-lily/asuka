@@ -17,7 +17,7 @@ let updateVersion = ''
 let bubbleWindow: BrowserWindow | null = null
 
 function getTrayIconPath(): string {
-  return join(app.getAppPath(), 'resources', 'icon@16.png')
+  return join(app.getAppPath(), 'resources', 'icon@128.png')
 }
 
 function createBadgedIcon(base: Electron.NativeImage): Electron.NativeImage {
@@ -262,7 +262,7 @@ export function setUpdateAvailable(version: string): void {
 
 export function createTray(bubbleWin: BrowserWindow): Tray {
   const iconPath = getTrayIconPath()
-  baseIcon16 = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
+  baseIcon16 = nativeImage.createFromPath(iconPath).resize({ width: 32, height: 32 })
   badgedIcon16 = createBadgedIcon(baseIcon16)
 
   tray = new Tray(baseIcon16)
