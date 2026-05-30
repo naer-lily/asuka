@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
-const PARENT_SWITCH_MS = 100
+const PARENT_SWITCH_MS = 300
 const BUBBLE_LEAVE_MS = 100
 
 interface CommandItem {
