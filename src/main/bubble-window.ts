@@ -59,6 +59,7 @@ export function createBubbleWindow(): BrowserWindow {
     y: bubbleHomeY,
     width: BUBBLE_SIZE,
     height: BUBBLE_SIZE,
+    type: 'toolbar',
     frame: false,
     transparent: true,
     alwaysOnTop: true,
